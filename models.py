@@ -2,6 +2,42 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
+class BnConvRelu(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride):
+        super(BnConvRelu, self).__init__()
+        self.bn = nn.BatchNorm2d(in_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=1)
+        self.relu = nn.ReLU()
+
+    
+    def forward(self, x):
+        x = self.bn(x)
+        x = self.conv(x)
+        x = self.relu(x)
+        return x
+
+
+class SimpleCNN(nn.Module):
+    def __init__(self, in_channels=3, n_classes=10):
+        super(SimpleCNN, self).__init__()
+        self.conv0 = BnConvRelu(in_channels, 32, 3, 2)
+        self.conv1 = BnConvRelu(32, 64, 3, 1)
+        self.conv2 = BnConvRelu(64, 128, 3, 2)
+        self.conv3 = BnConvRelu(128, 128, 3, 1)
+        self.conv4 = BnConvRelu(128, 128, 3, 2)
+        self.conv5 = BnConvRelu(128, n_classes, 4, 1)
+
+    def forward(self, x):
+        x =  self.conv0(x)
+        x =  self.conv1(x)
+        x =  self.conv2(x)
+        x =  self.conv3(x)
+        x =  self.conv4(x)
+        x =  self.conv5(x)
+        return x
+
+
 class ResNet32x32(nn.Module):
     def __init__(self, in_channels=3, n_classes=10):
         super(ResNet32x32, self).__init__()
@@ -9,16 +45,16 @@ class ResNet32x32(nn.Module):
         self.in_channels = in_channels
         self.n_classes=n_classes
 
-        self.layers = nn.Sequential(self._make_residual_layer(16, scaling = "downsample"),
-                                    self._make_residual_layer(16, scaling = "same"),
-                                    self._make_residual_layer(16, scaling = "same"),
-                                    self._make_residual_layer(32, scaling = "downsample"),
+        self.layers = nn.Sequential(self._make_residual_layer(32, scaling = "downsample"),
                                     self._make_residual_layer(32, scaling = "same"),
                                     self._make_residual_layer(32, scaling = "same"),
                                     self._make_residual_layer(64, scaling = "downsample"),
                                     self._make_residual_layer(64, scaling = "same"),
                                     self._make_residual_layer(64, scaling = "same"),
-                                    nn.Conv2d(64*self.expansion, self.n_classes, kernel_size=4))
+                                    self._make_residual_layer(128, scaling = "downsample"),
+                                    self._make_residual_layer(128, scaling = "same"),
+                                    self._make_residual_layer(128, scaling = "same"),
+                                    nn.Conv2d(128*self.expansion, self.n_classes, kernel_size=4))
 
         
     def forward(self, x):

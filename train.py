@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from new_optim import SGD
-from models import ResNet32x32
+from new_optim import SGD, OlegOptim
+from models import ResNet32x32, SimpleCNN
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets
 
@@ -9,7 +9,7 @@ from torchvision import datasets
 def get_cifar10_data(data_dir, seed=13):
     #90% data is train, 10% is validation. USE RANDOM SEED
     cifar10 = datasets.CIFAR10(data_dir, train=True, transform=None, target_transform=None, download=True)
-    train_size = len(cifar10)//9
+    train_size = int(len(cifar10)*0.9)
     np.random.seed(seed)
     indices = np.arange(len(cifar10))
     train_data = [[np.array(cifar10[idx][0]), cifar10[idx][1]] for idx in indices[0:train_size]]
@@ -36,11 +36,15 @@ def train_iteration(model, optim, loss_fn, writer, train_data, batch_size, globa
 
     #summary
     writer.add_scalar('loss/train', loss, global_step)
-    print(global_step, loss)
+    #only OlegOptim
+    writer.add_scalar('delta', optim.delta, global_step)
+    writer.add_scalar('grad', optim.delta, global_step)
+
 
 
 def val_iteration(model, loss_fn, writer, val_data, val_batch_size, global_step, device):
     with torch.no_grad():
+        print(global_step)
         images, labels = get_batch(val_data, val_batch_size, device)
         pred = model(images).squeeze()
         loss = loss_fn(pred, labels)
@@ -61,21 +65,21 @@ def decrease_lr(optimizer, factor=10):
 def train():
     #parameters
     device = torch.device("cuda") #"cuda" or "cpu"
-    n_iterations = 20000
+    n_iterations = 50
     when_decrease_lr = [10000, 15000]
-    learning_rate=0.001
-    momentum=0.9
-    log_dir = "logs/cifar10-SGD/"
+    learning_rate=0.01
+    momentum=0
+    log_dir = "logs/cifar10-OlegOptim/"
     data_dir = "/hdd/Data/"
-    batch_size=50
+    batch_size=100
     val_batch_size=1000
     val_iter = 25
 
     #model, optimizer, loss_fn, data, and writer
     model = ResNet32x32().to(device)
     loss_fn = torch.nn.CrossEntropyLoss(reduction="mean").to(device)
-    optim = SGD(model.parameters(), lr=learning_rate, momentum=momentum)
-    writer = SummaryWriter(log_dir=log_dir) # RUN THIS: tensorboard --logdir=/home/nikita/Code/new-optim/logs/cifar10-SGD --host=127.0.0.1
+    optim = OlegOptim(model.parameters(), lr=learning_rate, momentum=momentum)
+    writer = SummaryWriter(log_dir=log_dir) # RUN THIS: tensorboard --logdir=/home/nikita/Code/new-optim/logs/ --host=127.0.0.1
     train_data, val_data = get_cifar10_data(data_dir)
 
     for global_step in range(n_iterations):

@@ -99,7 +99,7 @@ class OlegOptim(Optimizer):
         defaults = dict(lr=lr, momentum=momentum)
         super(OlegOptim, self).__init__(params, defaults)
         self.params_k=None
-        self.delta = 0
+        self.xminusx = 0
         self.grad_norm = 0
 
 
@@ -129,11 +129,10 @@ class OlegOptim(Optimizer):
 
             #calculate delta and alpha
             if self.params_k is None:
-                self.delta = torch.norm(grad)
+                self.xminusx = torch.norm(grad)
             else:
-                self.delta = torch.norm(params-self.params_k)
+                self.xminusx = torch.norm(params-self.params_k)
             self.grad_norm = torch.norm(grad)
-            alpha = self.delta/self.grad_norm
             self.params_k = params
 
             #do update
@@ -142,7 +141,7 @@ class OlegOptim(Optimizer):
                     if p.grad is None:
                         continue
                     d_p = p.grad.data
-                    p.data.add_(-group['lr']*alpha, d_p)
+                    p.data.add_(-group['lr']/self.grad_norm, d_p)
 
 
         return loss

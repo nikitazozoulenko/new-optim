@@ -35,10 +35,11 @@ def train_iteration(model, optim, loss_fn, writer, train_data, batch_size, globa
     optim.zero_grad()
 
     #summary
-    writer.add_scalar('loss/train', loss, global_step)
-    #only OlegOptim
-    writer.add_scalar('delta', optim.delta, global_step)
-    writer.add_scalar('grad', optim.delta, global_step)
+    if global_step > 1:
+        writer.add_scalar('loss/train', loss, global_step)
+        #only OlegOptim
+        writer.add_scalar('norm(grad)', optim.grad_norm, global_step)
+        writer.add_scalar('norm(xk minus xkminusone)', optim.xminusx, global_step)
 
 
 
@@ -65,9 +66,9 @@ def decrease_lr(optimizer, factor=10):
 def train():
     #parameters
     device = torch.device("cuda") #"cuda" or "cpu"
-    n_iterations = 50
+    n_iterations = 20000
     when_decrease_lr = [10000, 15000]
-    learning_rate=0.01
+    learning_rate=0.1
     momentum=0
     log_dir = "logs/cifar10-OlegOptim/"
     data_dir = "/hdd/Data/"

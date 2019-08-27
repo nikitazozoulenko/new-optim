@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from new_optim import SGD, OlegOptim
+from new_optim import BBStabOleg, OnlyStabOleg, SGD
 from models import ResNet32x32, SimpleCNN
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets
@@ -35,11 +35,12 @@ def train_iteration(model, optim, loss_fn, writer, train_data, batch_size, globa
     optim.zero_grad()
 
     #summary
-    if global_step > 1:
+    if global_step > 0:
         writer.add_scalar('loss/train', loss, global_step)
         #only OlegOptim
         writer.add_scalar('norm(grad)', optim.grad_norm, global_step)
-        writer.add_scalar('norm(xk minus xkminusone)', optim.xminusx, global_step)
+        writer.add_scalar('norm(x minus x)', torch.norm(optim.xminusx), global_step)
+        writer.add_scalar('norm(grad minus grad)', torch.norm(optim.gradminusgrad), global_step)
 
 
 
@@ -66,20 +67,20 @@ def decrease_lr(optimizer, factor=10):
 def train():
     #parameters
     device = torch.device("cuda") #"cuda" or "cpu"
-    n_iterations = 20000
-    when_decrease_lr = [10000, 15000]
-    learning_rate=0.1
+    n_iterations = 35000
+    when_decrease_lr = [20000, 30000]
+    learning_rate=0.01
     momentum=0
-    log_dir = "logs/cifar10-OlegOptim/"
+    log_dir = "logs/cifar10-SGD"+str(learning_rate)
     data_dir = "/hdd/Data/"
-    batch_size=100
-    val_batch_size=1000
+    batch_size=128
+    val_batch_size=128
     val_iter = 25
 
     #model, optimizer, loss_fn, data, and writer
     model = ResNet32x32().to(device)
     loss_fn = torch.nn.CrossEntropyLoss(reduction="mean").to(device)
-    optim = OlegOptim(model.parameters(), lr=learning_rate, momentum=momentum)
+    optim = SGD(model.parameters(), lr=learning_rate, momentum=momentum)
     writer = SummaryWriter(log_dir=log_dir) # RUN THIS: tensorboard --logdir=/home/nikita/Code/new-optim/logs/ --host=127.0.0.1
     train_data, val_data = get_cifar10_data(data_dir)
 

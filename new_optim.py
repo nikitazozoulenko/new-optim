@@ -4,28 +4,6 @@ import copy
 
 
 class SGD(Optimizer):
-    r"""Implements stochastic gradient descent (optionally with momentum).
-
-    Nesterov momentum is based on the formula from
-    `On the importance of initialization and momentum in deep learning`__.
-
-    Args:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
-        lr (float): learning rate
-        momentum (float, optional): momentum factor (default: 0)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        dampening (float, optional): dampening for momentum (default: 0)
-
-    Example:
-        >>> optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9)
-        >>> optimizer.zero_grad()
-        >>> loss = loss_fn(model(input), target)
-        >>> loss.backward()
-        >>> optimizer.step()
-        >>> optimizer.zero_grad()
-    """
-
     def __init__(self, params, lr=required, momentum=0, dampening=0):
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -34,18 +12,45 @@ class SGD(Optimizer):
 
         defaults = dict(lr=lr, momentum=momentum)
         super(SGD, self).__init__(params, defaults)
+        self.old_params = None
+        self.old_grad = None
+        self.xminusx = 0
+        self.gradminusgrad = 0
+        self.grad_norm = 0
 
 
     def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
         loss = None
         if closure is not None:
             loss = closure()
+
+
+        #########START STATS
+
+        #find gradient and params
+        grad = []
+        params = []
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                grad += [p.grad.data.view(-1)]
+                params += [p.data.view(-1)]
+        grad = torch.cat(grad)
+        params = torch.cat(params)
+
+        #calculate delta and alpha
+        if self.old_grad is None:
+            self.xminusx = params
+            self.gradminusgrad = grad
+        else:
+            self.xminusx = params-self.old_params
+            self.gradminusgrad = grad - self.old_grad
+        self.grad_norm = torch.norm(grad)
+        self.old_params = params
+        self.old_grad = grad
+
+        ########END STATS
 
         for group in self.param_groups:
             momentum = group['momentum']
@@ -67,29 +72,7 @@ class SGD(Optimizer):
         return loss
 
 
-class OlegOptim(Optimizer):
-    r"""Implements stochastic gradient descent (optionally with momentum).
-
-    Nesterov momentum is based on the formula from
-    `On the importance of initialization and momentum in deep learning`__.
-
-    Args:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
-        lr (float): learning rate
-        momentum (float, optional): momentum factor (default: 0)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        dampening (float, optional): dampening for momentum (default: 0)
-
-    Example:
-        >>> optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9)
-        >>> optimizer.zero_grad()
-        >>> loss = loss_fn(model(input), target)
-        >>> loss.backward()
-        >>> optimizer.step()
-        >>> optimizer.zero_grad()
-    """
-
+class OnlyStabOleg(Optimizer):
     def __init__(self, params, lr=required, momentum=0, dampening=0):
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -97,19 +80,13 @@ class OlegOptim(Optimizer):
             raise ValueError("Invalid momentum value: {}".format(momentum))
 
         defaults = dict(lr=lr, momentum=momentum)
-        super(OlegOptim, self).__init__(params, defaults)
+        super(OnlyStabOleg, self).__init__(params, defaults)
         self.params_k=None
         self.xminusx = 0
         self.grad_norm = 0
 
 
     def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
         loss = None
         if closure is not None:
             loss = closure()
@@ -142,6 +119,74 @@ class OlegOptim(Optimizer):
                         continue
                     d_p = p.grad.data
                     p.data.add_(-group['lr']/self.grad_norm, d_p)
+
+
+        return loss
+
+
+
+class BBStabOleg(Optimizer):
+    def __init__(self, params, lr=required, momentum=0, dampening=0):
+        if lr is not required and lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if momentum < 0.0:
+            raise ValueError("Invalid momentum value: {}".format(momentum))
+
+        defaults = dict(lr=lr, momentum=momentum)
+        super(BBStabOleg, self).__init__(params, defaults)
+        self.old_params = None
+        self.old_grad = None
+        self.xminusx = 0
+        self.gradminusgrad = 0
+        self.grad_norm = 0
+
+
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        with torch.no_grad():
+            #find gradient and params
+            grad = []
+            params = []
+            for group in self.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    grad += [p.grad.data.view(-1)]
+                    params += [p.data.view(-1)]
+            grad = torch.cat(grad)
+            params = torch.cat(params)
+
+            #calculate delta and alpha
+            if self.old_grad is None:
+                self.xminusx = params
+                self.gradminusgrad = grad
+            else:
+                self.xminusx = params-self.old_params
+                self.gradminusgrad = grad - self.old_grad
+            self.grad_norm = torch.norm(grad)
+
+            #calculate alpha
+            alpha_stab = 1/self.grad_norm
+            alpha_bb = torch.sum(self.xminusx*self.gradminusgrad)/torch.sum(self.gradminusgrad*self.gradminusgrad)
+            if self.old_grad is None:
+                alpha = alpha_stab
+            else:
+                alpha = min(alpha_stab, alpha_bb)
+
+            #do update
+            for group in self.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    d_p = p.grad.data
+                    p.data.add_(-group['lr']*alpha, d_p)
+            
+            self.old_params = params
+            self.old_grad = grad
+
 
 
         return loss
